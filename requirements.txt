@@ -1,5 +1,6 @@
 earthengine-api
-geemap
+geemap==0.34.1
 streamlit
 pandas
 matplotlib
+python-box==6.1.0
