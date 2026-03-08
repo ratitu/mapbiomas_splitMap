@@ -1,14 +1,18 @@
 import streamlit as st
 import ee
-import geemap
+import geemap.foliumap as geemap
 import pandas as pd
 import matplotlib.pyplot as plt
 import json
 
-st.title("🎈 My new app")
-st.write(
-    "Let's start building! For help and inspiration, head over to [docs.streamlit.io](https://docs.streamlit.io/)."
-)
+# --- 1. CONFIGURAÇÃO DA PÁGINA ---
+st.set_page_config(page_title="MapBiomas Campinas", layout="wide")
+
+# --- 2. DEFINIÇÃO DE VARIÁVEIS GLOBAIS (FORA DE QUALQUER BLOCO) ---
+# Definir aqui para que 'anos_lista' esteja disponível em todo o script
+anos_lista = [str(a) for a in range(2024, 1984, -1)]
+nomes_legenda = ['Outros', 'Floresta', 'Rural', 'Urbana', 'Água']
+palette = ['#FFFFFF', '#006400', '#FFFFB2', '#EA3C53', '#0000FF']
 
 # Carrega o dicionário completo da chave
 credentials_info = st.secrets["earth_engine_key"]
@@ -37,35 +41,45 @@ ee.Initialize(credentials, project="ee-passeionamatamapas")
 st.set_page_config(layout="wide")
 st.title("Monitoramento de Uso do Solo - Campinas")
 
-# --- DADOS ---
+# --- 4. DADOS ---
 mapbiomas = ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10_1/mapbiomas_brazil_collection10_1_coverage_v1')
 limite = ee.FeatureCollection("projects/ee-rogergodoytest/assets/limite_municipal")
 
+# Reclassificação
 de = [1, 2, 3, 4, 5, 49, 10, 11, 12, 32, 29, 13, 14, 15, 18, 19, 39, 20, 40, 62, 21, 24, 33, 31]
 para = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 4, 4]
-palette = ['#FFFFFF', '#006400', '#FFFFB2', '#EA3C53', '#0000FF']
-nomes_legenda = ['Outros', 'Floresta', 'Rural', 'Urbana', 'Água']
 
-# --- SIDEBAR (MENU LATERAL) ---
-with st.sidebar:
-    st.header("Configurações")
-    modo = st.radio("Selecione o Modo:", ["Série Temporal", "Comparação (Split)"])
-    
-    anos = [str(a) for a in range(2024, 1984, -1)]
-    
-    if modo == "Série Temporal":
-        ano_selecionado = st.selectbox("Escolha o Ano:", anos)
-    else:
-        col1, col2 = st.columns(2)
-        ano_esq = col1.selectbox("Esquerda:", anos, index=len(anos)-1)
-        ano_dir = col2.selectbox("Direita:", anos, index=0)
-
-# --- PROCESSAMENTO ---
-def get_reclassed_image(ano):
+# --- 5. FUNÇÕES ---
+def formatar_imagem(ano):
     banda = f'classification_{ano}'
     return mapbiomas.select(banda).clip(limite).remap(de, para, 0).uint8()
 
-# --- MAPA ---
+@st.cache_data
+def carregar_dados_area(ano):
+    img = formatar_imagem(ano)
+    area_img = ee.Image.pixelArea().addBands(img)
+    stats = area_img.reduceRegion(
+        reducer=ee.Reducer.sum().group(groupField=1, groupName='classe'),
+        geometry=limite.geometry(),
+        scale=30,
+        maxPixels=1e13
+    ).getInfo()
+    
+    res = []
+    if 'groups' in stats:
+        for g in stats['groups']:
+            idx = int(g['classe'])
+            if idx < len(nomes_legenda):
+                res.append({'Classe': nomes_legenda[idx], 'Hectares': round(g['sum']/10000, 2)})
+    return pd.DataFrame(res)
+
+# --- 6. INTERFACE (SIDEBAR) ---
+st.sidebar.header("⚙️ Painel de Controle")
+modo = st.sidebar.radio("Selecione o modo:", ["Análise Temporal", "Comparação Lado a Lado"])
+
+# --- 7. CONSTRUÇÃO DO MAPA ---
+st.title("🛰️ Monitoramento de Uso do Solo - Campinas")
+
 m = geemap.Map(basemap="HYBRID")
 m.centerObject(limite, 12)
 
@@ -74,21 +88,29 @@ if modo == "Análise Temporal":
     img = formatar_imagem(ano_sel)
     m.add_layer(img, {'min': 0, 'max': 4, 'palette': palette}, f"Uso {ano_sel}")
     
-    # ... (bloco das estatísticas/gráficos permanece igual)
+    # Estatísticas na Sidebar
+    df_area = carregar_dados_area(ano_sel)
+    st.sidebar.subheader(f"Estatísticas - {ano_sel}")
+    st.sidebar.dataframe(df_area, hide_index=True)
+    
+    fig, ax = plt.subplots(figsize=(5, 3))
+    df_plot = df_area[df_area['Classe'] != 'Outros']
+    ax.bar(df_plot['Classe'], df_plot['Hectares'], color=palette[1:])
+    plt.xticks(rotation=45)
+    st.sidebar.pyplot(fig)
 
 else:
     # MODO COMPARATIVO (Split Map)
+    # Aqui as colunas estão na sidebar, mas anos_lista está acessível agora
     col1, col2 = st.sidebar.columns(2)
     ano_esq = col1.selectbox("Esquerda:", anos_lista, index=len(anos_lista)-1)
     ano_dir = col2.selectbox("Direita:", anos_lista, index=0)
     
-    # IMPORTANTE: No Streamlit, precisamos criar os TileLayers do Earth Engine
-    # e passá-los para a função split_map do geemap.foliumap
+    # TileLayers para o Split Map (Crucial para Streamlit)
     left_layer = geemap.ee_tile_layer(formatar_imagem(ano_esq), {'min': 0, 'max': 4, 'palette': palette}, f"Uso {ano_esq}")
     right_layer = geemap.ee_tile_layer(formatar_imagem(ano_dir), {'min': 0, 'max': 4, 'palette': palette}, f"Uso {ano_dir}")
     
-    # No geemap.foliumap, a função split_map adiciona o controle SideBySide
     m.split_map(left_layer, right_layer)
 
-# O comando m.to_streamlit agora vai processar o mapa com o plugin de comparação
+# Exibe o mapa
 m.to_streamlit(height=700)
