@@ -1,6 +1,6 @@
 earthengine-api>=0.1.390
-geemap>=0.34.1
-streamlit>=1.30.0
+geemap>=0.37.1
+streamlit>=1.37.1
 pandas
 matplotlib
 python-box==6.1.0
