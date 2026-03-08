@@ -1,5 +1,5 @@
 earthengine-api>=0.1.390
-geemap>=0.30.0
+geemap>=0.34.1
 streamlit>=1.30.0
 pandas
 matplotlib
