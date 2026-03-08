@@ -80,15 +80,21 @@ modo = st.sidebar.radio("Selecione o modo:", ["Análise Temporal", "Comparação
 # --- 7. CONSTRUÇÃO DO MAPA ---
 st.title("🛰️ Monitoramento de Uso do Solo - Campinas")
 
+# IMPORTANTE: Use geemap.Map() mas garanta que estamos no modo Folium
 m = geemap.Map(basemap="HYBRID")
 m.centerObject(limite, 12)
 
 if modo == "Análise Temporal":
     ano_sel = st.sidebar.selectbox("Escolha o ano:", anos_lista)
     img = formatar_imagem(ano_sel)
-    m.add_layer(img, {'min': 0, 'max': 4, 'palette': palette}, f"Uso {ano_sel}")
     
-    # Estatísticas na Sidebar
+    # Parâmetros de visualização
+    vis_params = {'min': 0, 'max': 4, 'palette': palette}
+    
+    # Adiciona a camada ao mapa
+    m.add_ee_layer(img, vis_params, f"Uso {ano_sel}")
+    
+    # Estatísticas (bloco permanece igual)
     df_area = carregar_dados_area(ano_sel)
     st.sidebar.subheader(f"Estatísticas - {ano_sel}")
     st.sidebar.dataframe(df_area, hide_index=True)
@@ -100,25 +106,21 @@ if modo == "Análise Temporal":
     st.sidebar.pyplot(fig)
 
 else:
-    # MODO COMPARATIVO (Split Map)
+    # MODO COMPARATIVO (Split Map - Versão Estável para Streamlit)
     col1, col2 = st.sidebar.columns(2)
     ano_esq = col1.selectbox("Esquerda:", anos_lista, index=len(anos_lista)-1)
     ano_dir = col2.selectbox("Direita:", anos_lista, index=0)
     
-    # 1. Criamos as camadas de Tile do Earth Engine
-    # Note que usamos 'vis_params' separados para clareza
     vis_params = {'min': 0, 'max': 4, 'palette': palette}
     
+    # Criamos as URLs de Tiles diretamente do Earth Engine
+    # Isso evita o erro de "Invalid URL" no navegador
     left_layer = geemap.ee_tile_layer(formatar_imagem(ano_esq), vis_params, f"Uso {ano_esq}")
     right_layer = geemap.ee_tile_layer(formatar_imagem(ano_dir), vis_params, f"Uso {ano_dir}")
     
-    # 2. Adicionamos as camadas ao mapa MANUALMENTE antes do split
-    m.add_layer(left_layer)
-    m.add_layer(right_layer)
-    
-    # 3. Chamamos o split_map passando as camadas EXATAS que acabamos de adicionar
-    # No geemap.foliumap, isso ativa o SideBySideControl do Folium
-    m.split_map(left_layer=left_layer, right_layer=right_layer)
+    # Adicionamos o controle Side-by-Side usando o método do geemap.foliumap
+    m.split_map(left_layer, right_layer)
 
-# Exibe o mapa
+# RENDERIZAÇÃO FINAL
+# Use o componente nativo do geemap para Streamlit
 m.to_streamlit(height=700)
