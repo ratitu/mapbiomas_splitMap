@@ -101,16 +101,24 @@ if modo == "Análise Temporal":
 
 else:
     # MODO COMPARATIVO (Split Map)
-    # Aqui as colunas estão na sidebar, mas anos_lista está acessível agora
     col1, col2 = st.sidebar.columns(2)
     ano_esq = col1.selectbox("Esquerda:", anos_lista, index=len(anos_lista)-1)
     ano_dir = col2.selectbox("Direita:", anos_lista, index=0)
     
-    # TileLayers para o Split Map (Crucial para Streamlit)
-    left_layer = geemap.ee_tile_layer(formatar_imagem(ano_esq), {'min': 0, 'max': 4, 'palette': palette}, f"Uso {ano_esq}")
-    right_layer = geemap.ee_tile_layer(formatar_imagem(ano_dir), {'min': 0, 'max': 4, 'palette': palette}, f"Uso {ano_dir}")
+    # 1. Criamos as camadas de Tile do Earth Engine
+    # Note que usamos 'vis_params' separados para clareza
+    vis_params = {'min': 0, 'max': 4, 'palette': palette}
     
-    m.split_map(left_layer, right_layer)
+    left_layer = geemap.ee_tile_layer(formatar_imagem(ano_esq), vis_params, f"Uso {ano_esq}")
+    right_layer = geemap.ee_tile_layer(formatar_imagem(ano_dir), vis_params, f"Uso {ano_dir}")
+    
+    # 2. Adicionamos as camadas ao mapa MANUALMENTE antes do split
+    m.add_layer(left_layer)
+    m.add_layer(right_layer)
+    
+    # 3. Chamamos o split_map passando as camadas EXATAS que acabamos de adicionar
+    # No geemap.foliumap, isso ativa o SideBySideControl do Folium
+    m.split_map(left_layer=left_layer, right_layer=right_layer)
 
 # Exibe o mapa
 m.to_streamlit(height=700)
